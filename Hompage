@@ -1,0 +1,563 @@
+import { useState, useEffect } from "react";
+
+const PROVINCES = [
+  "Jawa Tengah", "Jawa Barat", "Jawa Timur", "DKI Jakarta",
+  "Sumatera Utara", "Sumatera Selatan", "Kalimantan Timur",
+  "Sulawesi Selatan", "Bali", "Nusa Tenggara Barat"
+];
+
+const WEATHER_OPTIONS = [
+  { value: "cerah", label: "☀️ Cerah", color: "#F59E0B" },
+  { value: "berawan", label: "⛅ Berawan", color: "#6B7280" },
+  { value: "hujan_ringan", label: "🌦️ Hujan Ringan", color: "#60A5FA" },
+  { value: "hujan_lebat", label: "🌧️ Hujan Lebat", color: "#2563EB" },
+  { value: "badai", label: "⛈️ Badai", color: "#7C3AED" },
+  { value: "kemarau", label: "🏜️ Kemarau", color: "#D97706" },
+];
+
+const KOMODITAS = [
+  { id: "beras", nama: "Beras (kg)", icon: "🌾", satuan: "Rp/kg" },
+  { id: "jagung", nama: "Jagung (kg)", icon: "🌽", satuan: "Rp/kg" },
+  { id: "kedelai", nama: "Kedelai (kg)", icon: "🫘", satuan: "Rp/kg" },
+  { id: "bawang_merah", nama: "Bawang Merah (kg)", icon: "🧅", satuan: "Rp/kg" },
+  { id: "cabai", nama: "Cabai Merah (kg)", icon: "🌶️", satuan: "Rp/kg" },
+  { id: "minyak_goreng", nama: "Minyak Goreng (L)", icon: "🫙", satuan: "Rp/L" },
+  { id: "gula_pasir", nama: "Gula Pasir (kg)", icon: "🍚", satuan: "Rp/kg" },
+  { id: "telur_ayam", nama: "Telur Ayam (kg)", icon: "🥚", satuan: "Rp/kg" },
+];
+
+const PANEN_KOMODITAS = [
+  { id: "padi", nama: "Padi", icon: "🌾" },
+  { id: "jagung", nama: "Jagung", icon: "🌽" },
+  { id: "kedelai", nama: "Kedelai", icon: "🫘" },
+  { id: "sayuran", nama: "Sayuran", icon: "🥬" },
+  { id: "buah", nama: "Buah-buahan", icon: "🍊" },
+];
+
+const KONDISI_PANEN = [
+  { value: "sangat_baik", label: "🌟 Sangat Baik", color: "#10B981" },
+  { value: "baik", label: "✅ Baik", color: "#34D399" },
+  { value: "sedang", label: "⚠️ Sedang", color: "#F59E0B" },
+  { value: "buruk", label: "❌ Buruk", color: "#EF4444" },
+  { value: "gagal", label: "💀 Gagal Panen", color: "#7F1D1D" },
+];
+
+function formatRupiah(val) {
+  if (!val) return "-";
+  return "Rp " + Number(val).toLocaleString("id-ID");
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export default function App() {
+  const [tab, setTab] = useState("input");
+  const [records, setRecords] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cuaca_records") || "[]"); } catch { return []; }
+  });
+  const [form, setForm] = useState({
+    tanggal: todayStr(),
+    provinsi: "Jawa Tengah",
+    cuaca: "cerah",
+    suhu_min: "",
+    suhu_max: "",
+    curah_hujan: "",
+    kelembaban: "",
+    harga: {},
+    panen: {},
+    catatan: "",
+  });
+  const [saved, setSaved] = useState(false);
+  const [filterProv, setFilterProv] = useState("Semua");
+
+  useEffect(() => {
+    try { localStorage.setItem("cuaca_records", JSON.stringify(records)); } catch {}
+  }, [records]);
+
+  function handleHarga(id, val) {
+    setForm(f => ({ ...f, harga: { ...f.harga, [id]: val } }));
+  }
+  function handlePanen(id, field, val) {
+    setForm(f => ({ ...f, panen: { ...f.panen, [id]: { ...(f.panen[id] || {}), [field]: val } } }));
+  }
+
+  function handleSave() {
+    if (!form.tanggal || !form.provinsi) return;
+    const newRec = { ...form, id: Date.now() };
+    setRecords(r => [newRec, ...r]);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    setForm(f => ({ ...f, harga: {}, panen: {}, curah_hujan: "", catatan: "", suhu_min: "", suhu_max: "", kelembaban: "" }));
+  }
+
+  function handleDelete(id) {
+    setRecords(r => r.filter(x => x.id !== id));
+  }
+
+  const filtered = filterProv === "Semua" ? records : records.filter(r => r.provinsi === filterProv);
+
+  // Summary stats
+  const avgHarga = {};
+  KOMODITAS.forEach(k => {
+    const vals = records.map(r => Number(r.harga?.[k.id])).filter(v => v > 0);
+    avgHarga[k.id] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  });
+
+  const weatherCount = {};
+  records.forEach(r => { weatherCount[r.cuaca] = (weatherCount[r.cuaca] || 0) + 1; });
+  const dominantWeather = Object.entries(weatherCount).sort((a, b) => b[1] - a[1])[0];
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)",
+      fontFamily: "'Segoe UI', 'Noto Sans', sans-serif",
+      color: "#e2e8f0",
+    }}>
+      {/* Header */}
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        borderBottom: "1px solid rgba(255,255,255,0.1)",
+        padding: "18px 24px",
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        backdropFilter: "blur(10px)",
+      }}>
+        <div style={{ fontSize: 36 }}>🌤️</div>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: "#fff" }}>
+            AgriCuaca Indonesia
+          </h1>
+          <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>
+            Pencatat Cuaca Harian • Harga Pangan • Kondisi Panen
+          </p>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          {[
+            { key: "input", label: "📝 Input Data" },
+            { key: "riwayat", label: "📋 Riwayat" },
+            { key: "ringkasan", label: "📊 Ringkasan" },
+          ].map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              border: "none",
+              background: tab === t.key ? "linear-gradient(90deg, #22d3ee, #0ea5e9)" : "rgba(255,255,255,0.08)",
+              color: tab === t.key ? "#fff" : "#94a3b8",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: "pointer",
+              transition: "all 0.2s",
+            }}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px" }}>
+
+        {/* ===== INPUT TAB ===== */}
+        {tab === "input" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+            {/* Kiri: Cuaca */}
+            <div>
+              <Section title="🌡️ Data Cuaca Harian">
+                <Row label="Tanggal">
+                  <input type="date" value={form.tanggal}
+                    onChange={e => setForm(f => ({ ...f, tanggal: e.target.value }))}
+                    style={inputStyle} />
+                </Row>
+                <Row label="Provinsi">
+                  <select value={form.provinsi}
+                    onChange={e => setForm(f => ({ ...f, provinsi: e.target.value }))}
+                    style={inputStyle}>
+                    {PROVINCES.map(p => <option key={p}>{p}</option>)}
+                  </select>
+                </Row>
+                <Row label="Kondisi Cuaca">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {WEATHER_OPTIONS.map(w => (
+                      <button key={w.value} onClick={() => setForm(f => ({ ...f, cuaca: w.value }))}
+                        style={{
+                          padding: "6px 12px", borderRadius: 20, border: "2px solid",
+                          borderColor: form.cuaca === w.value ? w.color : "transparent",
+                          background: form.cuaca === w.value ? w.color + "33" : "rgba(255,255,255,0.05)",
+                          color: form.cuaca === w.value ? w.color : "#94a3b8",
+                          cursor: "pointer", fontSize: 12, fontWeight: 600,
+                        }}>{w.label}</button>
+                    ))}
+                  </div>
+                </Row>
+                <Row label="Suhu Min / Max (°C)">
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input placeholder="Min" type="number" value={form.suhu_min}
+                      onChange={e => setForm(f => ({ ...f, suhu_min: e.target.value }))}
+                      style={{ ...inputStyle, width: 80 }} />
+                    <input placeholder="Max" type="number" value={form.suhu_max}
+                      onChange={e => setForm(f => ({ ...f, suhu_max: e.target.value }))}
+                      style={{ ...inputStyle, width: 80 }} />
+                  </div>
+                </Row>
+                <Row label="Curah Hujan (mm)">
+                  <input type="number" placeholder="0" value={form.curah_hujan}
+                    onChange={e => setForm(f => ({ ...f, curah_hujan: e.target.value }))}
+                    style={inputStyle} />
+                </Row>
+                <Row label="Kelembaban (%)">
+                  <input type="number" placeholder="0-100" value={form.kelembaban}
+                    onChange={e => setForm(f => ({ ...f, kelembaban: e.target.value }))}
+                    style={inputStyle} />
+                </Row>
+              </Section>
+
+              <Section title="🌾 Kondisi Panen">
+                {PANEN_KOMODITAS.map(p => (
+                  <div key={p.id} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 6 }}>{p.icon} {p.nama}</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                      {KONDISI_PANEN.map(k => (
+                        <button key={k.value}
+                          onClick={() => handlePanen(p.id, "kondisi", k.value)}
+                          style={{
+                            padding: "4px 10px", borderRadius: 14, border: "2px solid",
+                            borderColor: form.panen[p.id]?.kondisi === k.value ? k.color : "transparent",
+                            background: form.panen[p.id]?.kondisi === k.value ? k.color + "22" : "rgba(255,255,255,0.05)",
+                            color: form.panen[p.id]?.kondisi === k.value ? k.color : "#94a3b8",
+                            cursor: "pointer", fontSize: 11, fontWeight: 600,
+                          }}>{k.label}</button>
+                      ))}
+                    </div>
+                    <input placeholder="Estimasi hasil panen (ton/ha)"
+                      type="number" value={form.panen[p.id]?.hasil || ""}
+                      onChange={e => handlePanen(p.id, "hasil", e.target.value)}
+                      style={{ ...inputStyle, fontSize: 12 }} />
+                  </div>
+                ))}
+              </Section>
+            </div>
+
+            {/* Kanan: Harga */}
+            <div>
+              <Section title="💰 Harga Kebutuhan Pokok">
+                <p style={{ fontSize: 12, color: "#64748b", marginTop: 0, marginBottom: 16 }}>
+                  Catat harga pasar setempat hari ini
+                </p>
+                {KOMODITAS.map(k => (
+                  <Row key={k.id} label={`${k.icon} ${k.nama}`}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: "#64748b" }}>Rp</span>
+                      <input type="number" placeholder="Harga..."
+                        value={form.harga[k.id] || ""}
+                        onChange={e => handleHarga(k.id, e.target.value)}
+                        style={inputStyle} />
+                      <span style={{ fontSize: 11, color: "#475569", whiteSpace: "nowrap" }}>/
+                        {k.satuan.includes("L") ? "L" : "kg"}</span>
+                    </div>
+                  </Row>
+                ))}
+              </Section>
+
+              <Section title="📝 Catatan Tambahan">
+                <textarea
+                  placeholder="Catatan kondisi lapangan, kejadian khusus, dll..."
+                  value={form.catatan}
+                  onChange={e => setForm(f => ({ ...f, catatan: e.target.value }))}
+                  rows={4}
+                  style={{ ...inputStyle, width: "100%", resize: "vertical", boxSizing: "border-box" }}
+                />
+              </Section>
+
+              <button onClick={handleSave} style={{
+                width: "100%", padding: "14px", borderRadius: 12, border: "none",
+                background: saved
+                  ? "linear-gradient(90deg, #10b981, #34d399)"
+                  : "linear-gradient(90deg, #0ea5e9, #22d3ee)",
+                color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer",
+                transition: "all 0.3s", letterSpacing: 0.5,
+              }}>
+                {saved ? "✅ Data Tersimpan!" : "💾 Simpan Data Hari Ini"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ===== RIWAYAT TAB ===== */}
+        {tab === "riwayat" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <span style={{ fontSize: 14, color: "#94a3b8" }}>Filter Provinsi:</span>
+              <select value={filterProv} onChange={e => setFilterProv(e.target.value)} style={inputStyle}>
+                <option>Semua</option>
+                {PROVINCES.map(p => <option key={p}>{p}</option>)}
+              </select>
+              <span style={{ marginLeft: "auto", fontSize: 13, color: "#64748b" }}>
+                {filtered.length} catatan
+              </span>
+            </div>
+
+            {filtered.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+                <p>Belum ada data. Mulai mencatat dari tab Input Data.</p>
+              </div>
+            ) : filtered.map(r => {
+              const cuacaInfo = WEATHER_OPTIONS.find(w => w.value === r.cuaca);
+              return (
+                <div key={r.id} style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 14, padding: 20, marginBottom: 14,
+                  backdropFilter: "blur(6px)",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span style={{ fontSize: 22 }}>{cuacaInfo?.label.split(" ")[0]}</span>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 16 }}>{r.provinsi}</div>
+                          <div style={{ fontSize: 12, color: "#64748b" }}>{r.tanggal}</div>
+                        </div>
+                        <span style={{
+                          padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600,
+                          background: cuacaInfo?.color + "22", color: cuacaInfo?.color,
+                          border: `1px solid ${cuacaInfo?.color}44`
+                        }}>{cuacaInfo?.label}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 16, marginTop: 10, flexWrap: "wrap" }}>
+                        {r.suhu_min && <Chip icon="🌡️" val={`${r.suhu_min}–${r.suhu_max}°C`} />}
+                        {r.curah_hujan && <Chip icon="💧" val={`${r.curah_hujan} mm`} />}
+                        {r.kelembaban && <Chip icon="💨" val={`${r.kelembaban}%`} />}
+                      </div>
+                    </div>
+                    <button onClick={() => handleDelete(r.id)} style={{
+                      background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)",
+                      color: "#ef4444", borderRadius: 8, padding: "4px 10px",
+                      cursor: "pointer", fontSize: 12,
+                    }}>Hapus</button>
+                  </div>
+
+                  {/* Harga */}
+                  {Object.keys(r.harga || {}).some(k => r.harga[k]) && (
+                    <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
+                      <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>💰 Harga Hari Ini:</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {KOMODITAS.filter(k => r.harga[k.id]).map(k => (
+                          <div key={k.id} style={{
+                            background: "rgba(14,165,233,0.1)", border: "1px solid rgba(14,165,233,0.2)",
+                            borderRadius: 8, padding: "4px 10px", fontSize: 12,
+                          }}>
+                            {k.icon} {k.nama.split(" ")[0]}: <b>{formatRupiah(r.harga[k.id])}</b>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Panen */}
+                  {Object.keys(r.panen || {}).some(k => r.panen[k]?.kondisi) && (
+                    <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12 }}>
+                      <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>🌾 Kondisi Panen:</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {PANEN_KOMODITAS.filter(p => r.panen[p.id]?.kondisi).map(p => {
+                          const kd = KONDISI_PANEN.find(k => k.value === r.panen[p.id]?.kondisi);
+                          return (
+                            <div key={p.id} style={{
+                              background: kd?.color + "22", border: `1px solid ${kd?.color}44`,
+                              borderRadius: 8, padding: "4px 10px", fontSize: 12, color: kd?.color,
+                            }}>
+                              {p.icon} {p.nama}: {kd?.label}
+                              {r.panen[p.id]?.hasil && ` (${r.panen[p.id].hasil} ton/ha)`}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {r.catatan && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
+                      📝 {r.catatan}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ===== RINGKASAN TAB ===== */}
+        {tab === "ringkasan" && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
+              <StatCard icon="📋" title="Total Catatan" value={records.length} sub="entri data" />
+              <StatCard icon="🗺️" title="Provinsi Tercatat"
+                value={new Set(records.map(r => r.provinsi)).size} sub="wilayah" />
+              <StatCard icon="🌤️" title="Cuaca Dominan"
+                value={dominantWeather ? WEATHER_OPTIONS.find(w => w.value === dominantWeather[0])?.label : "-"}
+                sub={dominantWeather ? `${dominantWeather[1]}x tercatat` : "belum ada data"} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <Section title="💰 Rata-rata Harga Terkini">
+                {KOMODITAS.map(k => (
+                  <div key={k.id} style={{
+                    display: "flex", justifyContent: "space-between",
+                    alignItems: "center", padding: "10px 0",
+                    borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  }}>
+                    <span style={{ fontSize: 13 }}>{k.icon} {k.nama}</span>
+                    <span style={{
+                      fontWeight: 700, fontSize: 13,
+                      color: avgHarga[k.id] ? "#22d3ee" : "#475569",
+                    }}>
+                      {avgHarga[k.id] ? formatRupiah(avgHarga[k.id]) : "Belum ada data"}
+                    </span>
+                  </div>
+                ))}
+              </Section>
+
+              <Section title="🌾 Ringkasan Kondisi Panen">
+                {PANEN_KOMODITAS.map(p => {
+                  const panenData = records.flatMap(r => {
+                    const pd = r.panen?.[p.id];
+                    return pd?.kondisi ? [pd.kondisi] : [];
+                  });
+                  const count = {};
+                  panenData.forEach(k => { count[k] = (count[k] || 0) + 1; });
+                  const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+                  const kd = top ? KONDISI_PANEN.find(k => k.value === top[0]) : null;
+
+                  return (
+                    <div key={p.id} style={{
+                      display: "flex", justifyContent: "space-between",
+                      alignItems: "center", padding: "10px 0",
+                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    }}>
+                      <span style={{ fontSize: 13 }}>{p.icon} {p.nama}</span>
+                      {kd ? (
+                        <span style={{
+                          padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+                          background: kd.color + "22", color: kd.color,
+                          border: `1px solid ${kd.color}44`,
+                        }}>{kd.label}</span>
+                      ) : <span style={{ fontSize: 12, color: "#475569" }}>Belum ada data</span>}
+                    </div>
+                  );
+                })}
+
+                <div style={{ marginTop: 16, padding: 14, background: "rgba(255,255,255,0.04)", borderRadius: 10 }}>
+                  <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 8 }}>📊 Distribusi Cuaca Tercatat</div>
+                  {WEATHER_OPTIONS.map(w => {
+                    const cnt = weatherCount[w.value] || 0;
+                    const pct = records.length ? Math.round(cnt / records.length * 100) : 0;
+                    return cnt > 0 ? (
+                      <div key={w.value} style={{ marginBottom: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                          <span>{w.label}</span><span style={{ color: w.color }}>{pct}%</span>
+                        </div>
+                        <div style={{ height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 3 }}>
+                          <div style={{ height: 6, width: `${pct}%`, background: w.color, borderRadius: 3, transition: "width 0.5s" }} />
+                        </div>
+                      </div>
+                    ) : null;
+                  })}
+                  {records.length === 0 && <p style={{ color: "#475569", fontSize: 12, margin: 0 }}>Belum ada data cuaca tercatat.</p>}
+                </div>
+              </Section>
+            </div>
+
+            {records.length > 0 && (
+              <Section title="🔗 Analisis Hubungan Cuaca & Harga">
+                <p style={{ fontSize: 13, color: "#94a3b8", marginTop: 0 }}>
+                  Perbandingan rata-rata harga beras berdasarkan kondisi cuaca yang dicatat:
+                </p>
+                {WEATHER_OPTIONS.map(w => {
+                  const berasVals = records.filter(r => r.cuaca === w.value && r.harga?.beras)
+                    .map(r => Number(r.harga.beras));
+                  if (!berasVals.length) return null;
+                  const avg = Math.round(berasVals.reduce((a, b) => a + b, 0) / berasVals.length);
+                  return (
+                    <div key={w.value} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 12px", marginBottom: 6, borderRadius: 8,
+                      background: w.color + "11", border: `1px solid ${w.color}22`
+                    }}>
+                      <span style={{ fontSize: 13 }}>{w.label}</span>
+                      <span style={{ fontWeight: 700, color: w.color, fontSize: 13 }}>
+                        🌾 Beras avg: {formatRupiah(avg)}
+                      </span>
+                    </div>
+                  );
+                })}
+                <p style={{ fontSize: 11, color: "#475569", marginTop: 12 }}>
+                  * Analisis berdasarkan data yang Anda catat. Semakin banyak data, semakin akurat korelasinya.
+                </p>
+              </Section>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---- Helper Components ----
+function Section({ title, children }) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.04)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 14, padding: 20, marginBottom: 16,
+    }}>
+      <h3 style={{ margin: "0 0 16px", fontSize: 15, fontWeight: 700, color: "#e2e8f0" }}>{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: "block", fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function Chip({ icon, val }) {
+  return (
+    <span style={{
+      fontSize: 12, color: "#94a3b8",
+      background: "rgba(255,255,255,0.05)",
+      padding: "3px 10px", borderRadius: 20,
+    }}>{icon} {val}</span>
+  );
+}
+
+function StatCard({ icon, title, value, sub }) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.04)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 14, padding: 20, textAlign: "center",
+    }}>
+      <div style={{ fontSize: 32, marginBottom: 8 }}>{icon}</div>
+      <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: "#22d3ee" }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>{sub}</div>
+    </div>
+  );
+}
+
+const inputStyle = {
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: 8,
+  color: "#e2e8f0",
+  padding: "8px 12px",
+  fontSize: 13,
+  outline: "none",
+  width: "100%",
+  boxSizing: "border-box",
+};
